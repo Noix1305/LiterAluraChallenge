@@ -1,6 +1,5 @@
 package com.example.aluracursos.literalura.service;
 
-import com.example.aluracursos.literalura.model.Libro;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -11,28 +10,27 @@ import java.net.http.HttpResponse;
 
 public class LibroApiClient {
 
-    private static final String API_URL = "https://gutendex.com/books/";  // URL de la API
+      // URL de la API
     private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
 
     public LibroApiClient() {
         this.httpClient = HttpClient.newHttpClient();
-        this.objectMapper = new ObjectMapper(); // Inicializa ObjectMapper de Jackson
     }
 
-    public Libro[] obtenerLibros() throws IOException, InterruptedException {
+    public String obtenerDatos(String url){
+        HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(API_URL))
-                .GET()
+                .uri(URI.create(url))
                 .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() == 200) {
-            return objectMapper.readValue(response.body(), Libro[].class); // Convierte JSON a objetos Libro[]
-        } else {
-            System.out.println("Error: " + response.statusCode());
-            return new Libro[0];
+        HttpResponse<String> response = null;
+        try {
+            response = client
+                    .send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
+        String json = response.body();
+        return json;
     }
+
 }
