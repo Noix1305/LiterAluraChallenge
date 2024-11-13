@@ -3,8 +3,10 @@ package com.example.aluracursos.literalura.principal;
 import com.example.aluracursos.literalura.model.*;
 import com.example.aluracursos.literalura.repositorio.AutorRepository;
 import com.example.aluracursos.literalura.repositorio.LibroRepository;
+import com.example.aluracursos.literalura.service.AutorService;
 import com.example.aluracursos.literalura.service.ConvierteDatos;
 import com.example.aluracursos.literalura.service.LibroApiClient;
+import com.example.aluracursos.literalura.service.LibroService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
@@ -15,17 +17,14 @@ import org.springframework.data.domain.Pageable;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class Principal {
-    private static final String API_URL = "https://gutendex.com/books/";
-    private static final String API_URL_TOPIC = "https://gutendex.com/books/?topic=";
-
     private Scanner teclado = new Scanner(System.in);
-    private LibroApiClient consumoApi = new LibroApiClient();
-    private ConvierteDatos conversor = new ConvierteDatos();
-    private LibroRepository repositorio;
-    private AutorRepository autorRepository;
+    private LibroService libroService;
+    private AutorService autorService;
+
     private int paginaActual = 0; // Variable para controlar la página actual
     private final int TAMAÑO_PAGINA = 10;
 
@@ -61,25 +60,34 @@ public class Principal {
 //    };
 
 
-    public Principal(LibroRepository repository, AutorRepository autorRepository) {
-        this.repositorio = repository;
-        this.autorRepository = autorRepository;
+    public Principal(LibroService libroService, AutorService autorService) {
+        this.libroService = libroService;
+        this.autorService = autorService;
     }
 
     public void muestraElMenu() throws JsonProcessingException {
         var opcion = -1;
         while (opcion != 0) {
             var menu = """
-                    1 - Buscar libros 
+                    
+                    Bienvenido a 'Busca Libros' tu Biblioteca Virtual!
+                    
+                    1 - Buscar libros por Título
                     2 - Mostrar Todos Los Libros
                     3 - Mostrar Todos Los Autores
                     4 - Buscar Autores Vivos Segun Año
+                    5 - Buscar libros por Idioma
+                    6 - Extras
+                    
                     
                     0 - Salir
                     """;
-            System.out.println(menu);
-            opcion = teclado.nextInt();
+
+
+            opcion = obtenerEntradaEntero(menu);
+
             teclado.nextLine(); // Limpiar buffer de entrada
+
 
             switch (opcion) {
                 case 1:
@@ -94,6 +102,12 @@ public class Principal {
                 case 4:
                     mostrarAutoresVivosSegunAnio();
                     break;
+                case 5:
+                    buscarLibrosPorIdioma();
+                    break;
+                case 6:
+                    extras();
+                    break;
                 case 0:
                     System.out.println("Cerrando la aplicación...");
                     break;
@@ -103,16 +117,288 @@ public class Principal {
         }
     }
 
-    private String obtenerJsonLibro(String nombreLibro) {
-        return consumoApi.obtenerDatos(API_URL + "?search=" + nombreLibro);
+    private void extras() {
+        var opcion = -1;
+        while (opcion != 0) {
+            var menu3 = """
+                    Extras
+                    
+                    Selecciona la opción:
+                    
+                    1 - Buscar Autores por Nombre
+                    2 - Buscar Autor por rangos de año
+                    3 - Listar los 10 libros mas descargados hasta la fecha
+                    
+                    
+                    0 - Volver
+                    """;
+            opcion = obtenerEntradaEntero(menu3);
+
+            teclado.nextLine();
+
+            switch (opcion) {
+                case 1:
+                    buscarAutoresPorNombre();
+                    opcion = 0;
+                    break;
+                case 2:
+                    buscarAutorPorRangosAnio();
+                    opcion = 0;
+                    break;
+                case 3:
+                    listarTop10LibrosDescargados();
+                    opcion = 0;
+                    break;
+                case 0:
+                    break;
+                default:
+                    System.out.println("Opción inválida");
+            }
+
+        }
     }
 
-    private Resultados deserializarResultados(String json) throws JsonProcessingException {
-        // Usar el método obtenerDatos de ConvierteDatos para deserializar
-        return conversor.obtenerDatos(json, Resultados.class);
+    private void listarTop10LibrosDescargados() {
+        List<Libro> top10Libros = libroService.obtenerTop10LibrosMasDescargados();
+
+        if (top10Libros.isEmpty()) {
+            System.out.println("No se encontraron libros.");
+        } else {
+            System.out.println("Top 10 libros más descargados:");
+            int i = 1;
+            for (Libro libro : top10Libros) {
+                String titulo = libro.getTitulo().length() > 80
+                        ? libro.getTitulo().substring(0, 80) + "..."
+                        : libro.getTitulo(); // Limitar a 80 caracteres
+                System.out.println(i + ". Título: " + titulo + ", Descargas: " + libro.getNumeroDescargas());
+                i++;
+            }
+        }
     }
 
-    private DatosLibro obtenerLibrosWeb() throws JsonProcessingException {
+
+    private void buscarAutorPorRangosAnio() {
+        boolean intervaloValido = false;
+        int anioInicio = 0;
+        int anioFin = 0;
+
+        while (!intervaloValido) {
+            anioInicio = obtenerEntradaEntero("Ingresa el año de inicio del intervalo:");
+            teclado.nextLine();
+            anioFin = obtenerEntradaEntero("Ingresa el año de fin del intervalo:");
+            teclado.nextLine(); // Limpiar buffer
+
+            // Validación para verificar que el año de inicio sea menor que el de fin
+            if (anioInicio < anioFin) {
+                intervaloValido = true; // Cambiamos el flag a true si los años son válidos
+            } else {
+                System.out.println("Error: El año de inicio debe ser menor que el año de fin. Inténtalo nuevamente.");
+            }
+        }
+
+        final int finalAnioInicio = anioInicio; // Hacemos la variable final
+        final int finalAnioFin = anioFin; // Hacemos la variable final
+
+        List<Autor> autores = autorService.listarAutoresPorIntervaloDeNacimiento(finalAnioInicio, finalAnioFin);
+
+        if (autores.isEmpty()) {
+            System.out.println("No se encontraron autores nacidos entre los años " + finalAnioInicio + " y " + finalAnioFin + ".");
+        } else {
+            System.out.println("Autores nacidos entre " + finalAnioInicio + " y " + finalAnioFin + ":");
+            autores.forEach(autor -> {
+                System.out.println("Nombre: " + autor.getNombre());
+                System.out.println("Año de Nacimiento: " + autor.getAnoNacimiento());
+                if (autor.getAnoMuerte() == 0) {
+                    System.out.println("Año de Muerte: Desconocido");
+                } else if (autor.getAnoMuerte() > finalAnioFin) {
+                    System.out.println("Año de Muerte: Aún vivía en esos años, falleció en " + autor.getAnoMuerte());
+                } else {
+                    System.out.println("Año de Muerte: " + autor.getAnoMuerte());
+                }
+                System.out.println("----------");
+            });
+        }
+    }
+
+
+    private void buscarAutoresPorNombre() {
+
+        System.out.println("Ingresa el nombre del autor que deseas buscar: ");
+        var nombre = teclado.nextLine();
+
+        Optional<Autor> autor = autorService.buscarAutorPorNombre(nombre);
+        if (autor.isPresent()) {
+            Autor autorEncontrado = autor.get();
+            System.out.println("Nombre: " + autorEncontrado.getNombre());
+            System.out.println("Año de Nacimiento: " + autorEncontrado.getAnoNacimiento());
+            System.out.println("Año de Muerte: " + (autorEncontrado.getAnoMuerte() != 0 ? autorEncontrado.getAnoMuerte() : "Aún vive"));
+        } else {
+            System.out.println("Autor no encontrado.");
+        }
+    }
+
+    private void mostrarAutoresVivosSegunAnio() {
+
+        final int anioBusquedaFinal = obtenerEntradaEntero("Ingresa el año de búsqueda: ");
+
+        List<Autor> autores = autorService.obtenerAutoresVivosEnAnio(anioBusquedaFinal);
+        if (autores.isEmpty()) {
+            System.out.println("No se encontraron autores vivos al año " + anioBusquedaFinal);
+        } else {
+            System.out.println("Autores vivos al año " + anioBusquedaFinal + ": ");
+            autores.forEach(autor -> {
+                int edadEnAnioBusqueda = anioBusquedaFinal - autor.getAnoNacimiento();
+                System.out.println("------- " + autor.getNombre() + ", Edad en " + anioBusquedaFinal + ": " + edadEnAnioBusqueda + " años\n");
+            });
+        }
+    }
+
+    public void mostrarTodosLosAutores() {
+        List<Autor> autores = autorService.obtenerTodosLosAutores();
+        System.out.println("Lista de Todos Los Autores: ");
+        autores.forEach(autor -> System.out.println("------- " + autor.getNombre()));
+    }
+
+
+    public void mostrarTodosLosLibros() {
+        boolean navegar = true;
+        while (navegar) {
+            // Obtener los libros paginados para la página actual
+            Page<Libro> librosPaginados = libroService.obtenerLibrosPaginados(PageRequest.of(paginaActual, TAMAÑO_PAGINA));
+
+            // Mostrar los libros obtenidos
+            if (librosPaginados != null && !librosPaginados.isEmpty()) {
+                System.out.println("Libros en la página " + (paginaActual + 1) + ":");
+                librosPaginados.forEach(libro -> System.out.println(libro.getTitulo()));
+            } else {
+                System.out.println("No hay libros disponibles.");
+            }
+
+            // Opciones para navegar
+
+            var menu4 = """
+                    Opciones:
+                    
+                    1 - Siguiente página
+                    2 - Página anterior
+                    
+                    0 - Salir de la navegación
+                    """;
+
+            int opcionNavegacion = obtenerEntradaEntero(menu4);
+
+            teclado.nextLine(); // Limpiar buffer
+
+            switch (opcionNavegacion) {
+                case 1: // Ir a la siguiente página
+                    assert librosPaginados != null;
+                    if (librosPaginados.hasNext()) {
+                        paginaActual++;
+                    } else {
+                        System.out.println("Ya estás en la última página.");
+                    }
+                    break;
+                case 2: // Volver a la página anterior
+                    if (paginaActual > 0) {
+                        paginaActual--;
+                    } else {
+                        System.out.println("Ya estás en la primera página.");
+                    }
+                    break;
+                case 0: // Salir
+                    navegar = false;
+                    break;
+                default:
+                    System.out.println("Opción inválida.");
+            }
+        }
+    }
+
+
+    private void buscarLibrosPorIdioma() {
+        var idioma = "";
+        var opcion = -1;
+        while (opcion != 0) {
+            var menu2 = """
+                    Selecciona la opción del idioma a buscar:
+                    
+                    1 - Inglés
+                    2 - Español
+                    3 - Tagalog
+                    4 - Francés
+                    
+                    0 - Volver
+                    """;
+
+            // Manejamos la entrada para asegurar que sea un número entero
+            opcion = obtenerEntradaEntero(menu2);
+
+            // Limpiar el buffer del teclado
+            teclado.nextLine();
+
+            switch (opcion) {
+                case 1:
+                    idioma = "en";
+                    break;
+                case 2:
+                    idioma = "es";
+                    break;
+                case 3:
+                    idioma = "tl";
+                    break;
+                case 4:
+                    idioma = "fr";
+                    break;
+                case 0:
+                    break;
+                default:
+                    System.out.println("Opción inválida. Por favor, ingrese un número válido.");
+                    opcion = -1; // Reitera el ciclo si se ingresa una opción inválida
+            }
+
+            if (!idioma.isEmpty()) {
+                this.mostrarEstadisticasDeLibrosPorIdioma(idioma);
+                break; // Termina el ciclo después de mostrar los libros
+            }
+        }
+    }
+
+    public void mostrarEstadisticasDeLibrosPorIdioma(String idioma) {
+
+        List<Libro> libros = libroService.mostrarLibrosPorIdioma(idioma);
+
+        var idiomaCompleto = switch (idioma) {
+            case "en" -> "inglés";
+            case "es" -> "español";
+            case "tl" -> "tagalog";
+            case "fr" -> "francés";
+            default -> idioma; // Usa el idioma como predeterminado si no es inglés o español
+        };
+
+        long cantidadLibros = libros.stream()
+                .filter(libro -> libro.getIdioma().equalsIgnoreCase(idioma))
+                .count();
+
+        AtomicInteger i = new AtomicInteger(1); //Usamos AtomicInteger para permitir la modificación de i dentro de la expresión lambda.
+
+        System.out.println("Cantidad de libros en el idioma " + idiomaCompleto + ": " + cantidadLibros + ".\n");
+
+        libros.stream()
+                .sorted((libro1, libro2) -> libro1.getTitulo().compareToIgnoreCase(libro2.getTitulo()))
+                .forEach(libro -> {
+                    String titulo = libro.getTitulo().length() > 80
+                            ? libro.getTitulo().substring(0, 80) + "..." // Limitar a 80 caracteres y agregar "..."
+                            : libro.getTitulo();
+                    // Mostrar el título y el contador
+                    System.out.println("Título " + i.getAndIncrement() + ": " + titulo + ", Descargas: " + libro.getNumeroDescargas());
+                    // Imprime el valor actual de i y luego lo incrementa, de modo que cada libro esté numerado secuencialmente en la lista.
+                });
+
+        System.out.println("\n");
+    }
+
+
+    public void obtenerLibrosWeb() throws JsonProcessingException {
         // Solicitar el título del libro al usuario
         System.out.println("Ingresa el titulo del libro que deseas buscar: ");
         var nombreLibro = teclado.nextLine();
@@ -121,21 +407,18 @@ public class Principal {
         nombreLibro = nombreLibro.replace(" ", "%20");
 
         // Obtener el JSON del libro desde la API
-        String json = obtenerJsonLibro(nombreLibro);
+        String json = libroService.obtenerJsonLibro(nombreLibro);
         System.out.println(json);
 
         // Deserializar los resultados de la API usando deserializarResultados
-        Resultados resultadoApi = deserializarResultados(json);
-        System.out.println("Resultados: " + resultadoApi);
+        Resultados resultadoApi = libroService.deserializarResultados(json);
 
         // Verificar si hay resultados disponibles
         if (resultadoApi != null && !resultadoApi.results().isEmpty()) {
             resultadoApi.results().forEach(datosLibro -> {
-                // Procesar cada DatosLibro
-                System.out.println("DatosLibro: " + datosLibro);
 
                 // Obtener los autores del libro
-                Autor autorGuardado = obtenerAutorGuardado(datosLibro);
+                Autor autorGuardado = autorService.obtenerAutorGuardado(datosLibro);
 
                 // Procesar o crear el libro
                 procesarLibro(datosLibro, autorGuardado);
@@ -143,45 +426,13 @@ public class Principal {
         } else {
             System.out.println("No se encontraron resultados.");
         }
-
-        return null;  // Retorna null si no se requiere un objeto DatosLibro
-    }
-
-    // Método para obtener los autores y guardarlos en la base de datos
-    private Autor obtenerAutorGuardado(DatosLibro datosLibro) {
-        // Inicializar el autor como null
-        Autor autorGuardado = null;
-
-        // Verificar si hay autores en los datos del libro
-        if (datosLibro.autores() != null && !datosLibro.autores().isEmpty()) {
-            // Tomamos el primer autor de la lista de autores
-            String nombreAutor = datosLibro.autores().get(0).nombre();
-
-            // Verificar si el autor ya existe en la base de datos
-            Optional<Autor> autorOptional = autorRepository.findByNombre(nombreAutor);
-
-            if (autorOptional.isPresent()) {
-                // Si el autor ya existe, lo obtenemos de la base de datos
-                autorGuardado = autorOptional.get();  // Obtener el autor dentro del Optional
-            } else {
-                // Si el autor no existe, creamos un nuevo autor y lo guardamos
-                autorGuardado = new Autor(datosLibro.autores().get(0));
-                autorRepository.save(autorGuardado);
-            }
-        } else {
-            System.out.println("No se encontraron autores.");
-        }
-
-        return autorGuardado;
     }
 
 
-    // Método para procesar el libro (crear o actualizar)
-    @Transactional
     public void procesarLibro(DatosLibro datosLibro, Autor autorGuardado) {
         try {
             // Buscar si el libro ya existe en la base de datos
-            Optional<Libro> libroOptional = repositorio.findByTitulo(datosLibro.titulo());
+            Optional<Libro> libroOptional = libroService.getLibroRepository().findByTitulo(datosLibro.titulo());
 
             if (libroOptional.isPresent()) {
                 // Si el libro ya existe, obtenerlo y mostrar sus datos
@@ -192,7 +443,7 @@ public class Principal {
                 // Si el libro no existe, crear uno nuevo con los datos
                 if (autorGuardado != null) {
                     Libro nuevoLibro = new Libro(datosLibro, autorGuardado);
-                    repositorio.save(nuevoLibro);
+                    libroService.getLibroRepository().save(nuevoLibro);
                     System.out.println("Nuevo libro creado: " + nuevoLibro);  // Aquí también usamos toString()
 
                 }
@@ -205,6 +456,23 @@ public class Principal {
             // Captura de cualquier otra excepción general
             System.out.println("Error al procesar el libro: " + e.getMessage());
         }
+    }
+
+
+    private int obtenerEntradaEntero(String mensaje) {
+        int numero = -1;
+        boolean esValido = false;
+        while (!esValido) {
+            try {
+                System.out.println(mensaje);
+                String entrada = teclado.nextLine(); // Usamos nextLine() para obtener la entrada completa
+                numero = Integer.parseInt(entrada); // Intentamos convertirla a un número
+                esValido = true; // Si la conversión tiene éxito, la entrada es válida
+            } catch (NumberFormatException e) {
+                System.out.println("Entrada no válida. Por favor, ingresa un número.");
+            }
+        }
+        return numero;
     }
 
 
@@ -244,80 +512,6 @@ public class Principal {
 //            System.out.println("No se encontraron temas para el topic '" + topic + "'.");
 //        }
 //    }
-
-    public void mostrarTodosLosLibros() {
-        boolean navegar = true;
-        while (navegar) {
-            // Obtener los libros paginados para la página actual
-            Page<Libro> librosPaginados = obtenerLibrosPaginados(PageRequest.of(paginaActual, TAMAÑO_PAGINA));
-
-            // Mostrar los libros obtenidos
-            if (librosPaginados != null && !librosPaginados.isEmpty()) {
-                System.out.println("Libros en la página " + (paginaActual + 1) + ":");
-                librosPaginados.forEach(libro -> System.out.println(libro.getTitulo()));
-            } else {
-                System.out.println("No hay libros disponibles.");
-            }
-
-            // Opciones para navegar
-            System.out.println("\nOpciones:");
-            System.out.println("1 - Siguiente página");
-            System.out.println("2 - Página anterior");
-            System.out.println("0 - Salir de la navegación");
-
-            // Obtener la opción del usuario
-            int opcionNavegacion = teclado.nextInt();
-            teclado.nextLine(); // Limpiar buffer
-
-            switch (opcionNavegacion) {
-                case 1: // Ir a la siguiente página
-                    if (librosPaginados.hasNext()) {
-                        paginaActual++;
-                    } else {
-                        System.out.println("Ya estás en la última página.");
-                    }
-                    break;
-                case 2: // Volver a la página anterior
-                    if (paginaActual > 0) {
-                        paginaActual--;
-                    } else {
-                        System.out.println("Ya estás en la primera página.");
-                    }
-                    break;
-                case 0: // Salir
-                    navegar = false;
-                    break;
-                default:
-                    System.out.println("Opción inválida.");
-            }
-        }
-    }
-
-    public Page<Libro> obtenerLibrosPaginados(Pageable pageable) {
-        return repositorio.findAll(pageable);
-    }
-
-    public void mostrarTodosLosAutores() {
-        List<Autor> autores = obtenerTodosLosAutores();
-        System.out.println("Lista de Todos Los Autores: ");
-        autores.forEach(autor -> System.out.println("------- " + autor.getNombre()));
-    }
-
-    public void mostrarAutoresVivosSegunAnio() {
-        System.out.println("Ingresa el año de busqueda: ");
-        var anioBusqueda = teclado.nextInt();
-        List<Autor> autores = obtenerAutoresVivosEnAnio(anioBusqueda);
-        System.out.println("Autores vivos al año " + anioBusqueda + ": ");
-        autores.forEach(autor -> System.out.println("------- " + autor.getNombre()));
-    }
-
-    public List<Autor> obtenerAutoresVivosEnAnio(int anioBusqueda) {
-        return autorRepository.findAutoresVivosEnAnio(anioBusqueda);
-    }
-
-    public List<Autor> obtenerTodosLosAutores() {
-        return autorRepository.findAll();
-    }
 
 
 }
