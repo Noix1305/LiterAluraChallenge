@@ -1,5 +1,7 @@
 package com.example.aluracursos.literalura.model;
 
+
+//Se pensaba usar para agregar temas de los libros, por tiempo no se logro agregar, pero quedará para el futuro.
 public enum Tema {
     ACCION("Action"),
     ROMANCE("Romance"),

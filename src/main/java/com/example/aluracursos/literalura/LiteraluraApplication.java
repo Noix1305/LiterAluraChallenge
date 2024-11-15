@@ -1,8 +1,6 @@
 package com.example.aluracursos.literalura;
 
 import com.example.aluracursos.literalura.principal.Principal;
-import com.example.aluracursos.literalura.repositorio.AutorRepository;
-import com.example.aluracursos.literalura.repositorio.LibroRepository;
 import com.example.aluracursos.literalura.service.AutorService;
 import com.example.aluracursos.literalura.service.LibroService;
 import org.springframework.beans.factory.annotation.Autowired;

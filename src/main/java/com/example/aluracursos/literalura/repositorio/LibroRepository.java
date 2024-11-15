@@ -11,9 +11,6 @@ import java.util.Optional;
 public interface LibroRepository extends JpaRepository<Libro, Long> {
     Optional<Libro> findByTitulo(String nombreLibro);
 
-    // Método para contar la cantidad de libros por idioma
-    long countByIdioma(String idioma);
-
     // Método para obtener todos los libros por idioma
     List<Libro> findByIdioma(String idioma);
 
