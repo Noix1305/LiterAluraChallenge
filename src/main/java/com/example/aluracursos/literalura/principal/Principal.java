@@ -475,7 +475,7 @@ public class Principal {
         return numero;
     }
 
-
+//Para implementaciones futuras
 //    public void buscarTemas(String topic) throws JsonProcessingException {
 //        Set<String> subjects = new HashSet<>();
 //        String url = API_URL_TOPIC + topic;

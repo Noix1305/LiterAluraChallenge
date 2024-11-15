@@ -50,8 +50,10 @@ public class AutorService {
     }
 
     public Optional<Autor> buscarAutorPorNombre(String nombre) {
-        return autorRepository.findByNombreAproximado(nombre);
+        List<Autor> autores = autorRepository.findByNombreAproximado(nombre);
+        return autores.isEmpty() ? Optional.empty() : Optional.of(autores.get(0));
     }
+
 
     public List<Autor> listarAutoresPorIntervaloDeNacimiento(int anoInicio, int anoFin) {
         return autorRepository.findByAnoNacimientoBetween(anoInicio, anoFin);
